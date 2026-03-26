@@ -400,15 +400,15 @@ namespace MainGameBeatSyncSpeed
 
             _cfgWavPath = Config.Bind("Audio", "WavFilePath", "",
                 "WAVファイルのフルパス（空にすると動画部屋の動画から自動抽出）");
-            _cfgBpm = Config.Bind("Audio", "Bpm", 128, "曲のBPM（例: 128, 139, 174）");
-            _cfgLowPassHz = Config.Bind("Audio", "LowPassHz", 150f,
+            _cfgBpm = Config.Bind("Audio", "Bpm", 107, "曲のBPM（例: 128, 139, 174）");
+            _cfgLowPassHz = Config.Bind("Audio", "LowPassHz", 50f,
                 new ConfigDescription("ローパスフィルタ周波数(Hz)。低音のみ解析する",
                     new AcceptableValueRange<float>(50f, 500f)));
 
-            _cfgAutoThreshold = Config.Bind("Speed", "AutoThreshold", true,
+            _cfgAutoThreshold = Config.Bind("Speed", "AutoThreshold", false,
                 "ON推奨。曲の低音エネルギーを全拍で集計し、下位33%をLow/Mid境界、上位33%をMid/High境界として自動算出する。" +
                 "曲ごとに動的に調整されるため手動設定不要。OFFにするとLowThreshold/HighThresholdを手動で使う。");
-            _cfgLowThreshold = Config.Bind("Speed", "LowThreshold", 0.3f,
+            _cfgLowThreshold = Config.Bind("Speed", "LowThreshold", 0.25f,
                 new ConfigDescription(
                     "[AutoThreshold=OFF時のみ有効] 正規化エネルギー(0-1)がこの値未満の拍をLow(静か)と判定する。" +
                     "例: 0.3 → エネルギーが30%未満の拍はLowSpeed扱い",
@@ -418,12 +418,12 @@ namespace MainGameBeatSyncSpeed
                     "[AutoThreshold=OFF時のみ有効] 正規化エネルギー(0-1)がこの値以上の拍をHigh(盛り上がり)と判定する。" +
                     "LowThreshold以上HighThreshold未満はMid扱い。例: 0.7 → 70%以上の拍はHighSpeed扱い",
                     new AcceptableValueRange<float>(0f, 1f)));
-            _cfgLowIntensity = Config.Bind("Speed", "LowSpeed", 0.25f,
+            _cfgLowIntensity = Config.Bind("Speed", "LowSpeed", 0f,
                 new ConfigDescription(
                     "静かな拍(Low)のアニメ速度。0=ゲーム最低速、1=ゲーム最高速。" +
                     "内部的にはspeedCalc(0-1)として使われ、ゲームのspeedカーブで実速度に変換される。",
                     new AcceptableValueRange<float>(0f, 1f)));
-            _cfgMidIntensity = Config.Bind("Speed", "MidSpeed", 0.5f,
+            _cfgMidIntensity = Config.Bind("Speed", "MidSpeed", 0.44f,
                 new ConfigDescription(
                     "普通の拍(Mid)のアニメ速度。LowSpeedとHighSpeedの中間に設定するのが自然。",
                     new AcceptableValueRange<float>(0f, 1f)));
@@ -436,13 +436,13 @@ namespace MainGameBeatSyncSpeed
                 new ConfigDescription("速度変化の補間時間(秒)。0=瞬間切替",
                     new AcceptableValueRange<float>(0f, 2f)));
 
-            _cfgAutoMotionSwitch = Config.Bind("MotionSwitch", "AutoMotionSwitch", true,
+            _cfgAutoMotionSwitch = Config.Bind("MotionSwitch", "AutoMotionSwitch", false,
                 "ONにすると拍エネルギーに応じて強/弱モーションを自動切替する。OFFで無効。");
-            _cfgStrongMotionBeats = Config.Bind("MotionSwitch", "StrongMotionBeats", 4f,
+            _cfgStrongMotionBeats = Config.Bind("MotionSwitch", "StrongMotionBeats", 8f,
                 new ConfigDescription(
                     "Highゾーン(盛り上がり)が何拍続いたら強モーションへ切替えるか",
                     new AcceptableValueRange<float>(0.5f, 64f)));
-            _cfgWeakMotionBeats = Config.Bind("MotionSwitch", "WeakMotionBeats", 4f,
+            _cfgWeakMotionBeats = Config.Bind("MotionSwitch", "WeakMotionBeats", 2f,
                 new ConfigDescription(
                     "Lowゾーン(静か)が何拍続いたら弱モーションへ切替えるか",
                     new AcceptableValueRange<float>(0.5f, 64f)));
