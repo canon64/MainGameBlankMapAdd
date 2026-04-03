@@ -35,6 +35,10 @@ KKS 向けプラグイン群です。
 - 調整値は動画ごとに保存できる
 - 曲ごとに最適な閾値が違う場合は、動画単位で保存して使い分ける
 
+## PlaybackBar 連携
+- PlaybackBar から `MainGirlHipHijack` の UI 表示/非表示を切り替えできる
+- PlaybackBar から残像プラグインの有効/無効を切り替えできる
+
 ## フォルダーセーブ / 動画個別セーブ
 - `▲` で開く詳細パネルの各セクションに `SaveF` / `SaveV` がある
 - `SaveF`（Folder Save）

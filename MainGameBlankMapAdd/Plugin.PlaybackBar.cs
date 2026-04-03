@@ -1136,12 +1136,14 @@ namespace MainGameBlankMapAdd
             float panelToggleW = 22f;
             float helpToggleW = 62f;
             float hipUiToggleW = 84f;
+            float afterimageToggleW = 94f;
             float toggleGap = 4f;
             float panelToggleX = x - panelToggleW - pad;
-            float toggleGroupW = helpToggleW + hipUiToggleW + toggleGap;
+            float toggleGroupW = helpToggleW + hipUiToggleW + afterimageToggleW + toggleGap * 2f;
             float toggleGroupX = barRect.x + (barRect.width - toggleGroupW) * 0.5f;
             float helpToggleX = toggleGroupX;
             float hipUiToggleX = helpToggleX + helpToggleW + toggleGap;
+            float afterimageToggleX = hipUiToggleX + hipUiToggleW + toggleGap;
             float helpToggleH = 18f;
             float helpToggleY = y + buttonH + 1f;
             bool currentHelpPopup = _settings.EnableUiHelpPopup;
@@ -1166,6 +1168,19 @@ namespace MainGameBlankMapAdd
             GUI.enabled = prevGuiEnabled;
             if (hipUiAvailable && nextHipUiVisible != hipUiVisibleNow)
                 TryApplyHipHijackUiVisible(nextHipUiVisible, "bar-ui-toggle");
+
+            bool afterimageAvailable = TryGetAfterimageEnabled(out bool afterimageEnabledNow);
+            GUI.enabled = prevGuiEnabled && afterimageAvailable;
+            bool nextAfterimageEnabled = HelpToggle(
+                new Rect(afterimageToggleX, helpToggleY, afterimageToggleW, helpToggleH),
+                afterimageEnabledNow,
+                "AfterImage",
+                afterimageAvailable
+                    ? "SimpleAfterimage の有効/無効"
+                    : "SimpleAfterimage が未ロード");
+            GUI.enabled = prevGuiEnabled;
+            if (afterimageAvailable && nextAfterimageEnabled != afterimageEnabledNow)
+                TryApplyAfterimageEnabled(nextAfterimageEnabled, "bar-ui-toggle");
 
             string panelToggleLabel = _playbackRoomControlsExpanded ? "▼" : "▲";
             if (HelpButtonContent(

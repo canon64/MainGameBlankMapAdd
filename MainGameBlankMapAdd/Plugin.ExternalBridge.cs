@@ -1,6 +1,8 @@
 using System;
 using System.Collections;
+using System.Linq;
 using System.Reflection;
+using BepInEx.Bootstrap;
 
 namespace MainGameBlankMapAdd
 {
@@ -338,6 +340,155 @@ namespace MainGameBlankMapAdd
                 LogWarn($"hip-hijack ui apply failed reason={reason} error={ex.Message}");
                 return false;
             }
+        }
+
+        private bool TryGetAfterimageEnabled(out bool enabled)
+        {
+            enabled = false;
+            try
+            {
+                if (!TryGetAfterimagePluginInstance(out object instance, out Type instType))
+                    return false;
+                const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+
+                FieldInfo cfgEnabledField = instType.GetField("_cfgEnabled", flags);
+                if (cfgEnabledField != null)
+                {
+                    enabled = GetConfigEntryBool(instType, instance, "_cfgEnabled", false);
+                    return true;
+                }
+
+                FieldInfo settingsField = instType.GetField("_settings", flags);
+                object settings = settingsField?.GetValue(instance);
+                if (settings == null)
+                    return false;
+
+                FieldInfo enabledField = settings.GetType().GetField("Enabled", flags);
+                if (enabledField == null || enabledField.FieldType != typeof(bool))
+                    return false;
+
+                enabled = (bool)enabledField.GetValue(settings);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogWarn($"afterimage snapshot failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        private bool TryApplyAfterimageEnabled(bool enabled, string reason)
+        {
+            try
+            {
+                if (!TryGetAfterimagePluginInstance(out object instance, out Type instType))
+                    return false;
+                const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+
+                FieldInfo cfgEnabledField = instType.GetField("_cfgEnabled", flags);
+                if (cfgEnabledField != null)
+                {
+                    SetConfigEntryBool(instType, instance, "_cfgEnabled", enabled);
+                    LogInfo($"afterimage applied reason={reason} enabled={enabled}");
+                    return true;
+                }
+
+                FieldInfo settingsField = instType.GetField("_settings", flags);
+                object settings = settingsField?.GetValue(instance);
+                if (settings == null)
+                    return false;
+
+                FieldInfo enabledField = settings.GetType().GetField("Enabled", flags);
+                if (enabledField == null || enabledField.FieldType != typeof(bool))
+                    return false;
+
+                enabledField.SetValue(settings, enabled);
+                LogInfo($"afterimage applied via settings reason={reason} enabled={enabled}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogWarn($"afterimage apply failed reason={reason} error={ex.Message}");
+                return false;
+            }
+        }
+
+        private bool TryGetAfterimagePluginInstance(out object instance, out Type instanceType)
+        {
+            instance = null;
+            instanceType = null;
+
+            try
+            {
+                if (Chainloader.PluginInfos != null &&
+                    Chainloader.PluginInfos.TryGetValue("com.kks.maingame.simpleafterimage", out var pluginInfo))
+                {
+                    instance = pluginInfo?.Instance;
+                    if (instance != null)
+                    {
+                        instanceType = instance.GetType();
+                        return true;
+                    }
+                }
+            }
+            catch
+            {
+                // fallback below
+            }
+
+            Type pluginType = ResolveAfterimagePluginType();
+            if (pluginType == null)
+                return false;
+
+            try
+            {
+                UnityEngine.Object[] instances = UnityEngine.Object.FindObjectsOfType(pluginType);
+                if (instances != null && instances.Length > 0)
+                {
+                    instance = instances[0];
+                    if (instance != null)
+                    {
+                        instanceType = instance.GetType();
+                        return true;
+                    }
+                }
+            }
+            catch
+            {
+                // fallthrough
+            }
+
+            return false;
+        }
+
+        private static Type ResolveAfterimagePluginType()
+        {
+            Type pluginType = Type.GetType("SimpleAfterimage.Plugin, SimpleAfterimage");
+            if (pluginType != null)
+                return pluginType;
+
+            Assembly[] assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            if (assemblies == null || assemblies.Length == 0)
+                return null;
+
+            for (int i = 0; i < assemblies.Length; i++)
+            {
+                Assembly asm = assemblies[i];
+                if (asm == null)
+                    continue;
+
+                string asmName = asm.GetName().Name;
+                if (!string.Equals(asmName, "SimpleAfterimage", StringComparison.Ordinal))
+                    continue;
+
+                Type t = asm.GetType("SimpleAfterimage.Plugin", false);
+                if (t != null)
+                    return t;
+            }
+
+            return assemblies
+                .Select(a => a?.GetType("SimpleAfterimage.Plugin", false))
+                .FirstOrDefault(t => t != null);
         }
 
         private bool TryApplyBeatSyncSavedSongBpm(Type instType, object instance, out int bpm)
