@@ -61,6 +61,7 @@ KKS 向けプラグイン群です。
 - MainGameSpeedLimitBreak
 - MainGameBeatSyncSpeed
 - MainGameTransformGizmo（MainGameBlankMapAdd の依存）
+- MainGameCharacterAfterimage
 
 ## ffmpeg 同梱について
 - この配布物は `ffmpeg.exe` を同梱します（BeatSync の動画音声解析で使用）。
