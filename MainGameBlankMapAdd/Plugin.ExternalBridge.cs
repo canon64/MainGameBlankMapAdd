@@ -461,6 +461,322 @@ namespace MainGameBlankMapAdd
             return false;
         }
 
+        // ── MainGameClubLights UI表示 ─────────────────────────────────
+
+        private bool TryGetClubLightsUiVisible(out bool visible)
+        {
+            visible = false;
+            try
+            {
+                if (!TryGetClubLightsPluginInstance(out object instance, out Type instType))
+                    return false;
+
+                const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+                bool pluginEnabled = true;
+                FieldInfo cfgEnabledField = instType.GetField("_cfgEnabled", flags);
+                if (cfgEnabledField != null)
+                    pluginEnabled = GetConfigEntryBool(instType, instance, "_cfgEnabled", true);
+
+                FieldInfo cfgUiField = instType.GetField("_cfgUiVisible", flags);
+                if (cfgUiField != null)
+                {
+                    visible = pluginEnabled && GetConfigEntryBool(instType, instance, "_cfgUiVisible", false);
+                    return true;
+                }
+
+                FieldInfo settingsField = instType.GetField("_settings", flags);
+                object settings = settingsField?.GetValue(instance);
+                if (settings == null)
+                    return false;
+
+                FieldInfo uiVisibleField = settings.GetType().GetField("UiVisible", flags);
+                if (uiVisibleField == null || uiVisibleField.FieldType != typeof(bool))
+                    return false;
+
+                visible = pluginEnabled && (bool)uiVisibleField.GetValue(settings);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogWarn($"club-lights ui snapshot failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        private bool TryApplyClubLightsUiVisible(bool visible, string reason)
+        {
+            try
+            {
+                if (!TryGetClubLightsPluginInstance(out object instance, out Type instType))
+                    return false;
+
+                const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+                bool enabledBefore = GetConfigEntryBool(instType, instance, "_cfgEnabled", true);
+
+                // UIをONにする時は、Plugin有効フラグも同時にONにする。
+                if (visible)
+                {
+                    SetConfigEntryBool(instType, instance, "_cfgEnabled", true);
+                    if (!enabledBefore)
+                        LogInfo($"club-lights auto-enable reason={reason} enabledBefore={enabledBefore} enabledAfter=true");
+                }
+                bool enabledAfter = GetConfigEntryBool(instType, instance, "_cfgEnabled", true);
+
+                FieldInfo cfgUiField = instType.GetField("_cfgUiVisible", flags);
+                if (cfgUiField != null)
+                {
+                    SetConfigEntryBool(instType, instance, "_cfgUiVisible", visible);
+                    LogInfo($"club-lights ui applied reason={reason} visible={visible} pluginEnabled={enabledAfter}");
+                    return true;
+                }
+
+                FieldInfo settingsField = instType.GetField("_settings", flags);
+                object settings = settingsField?.GetValue(instance);
+                if (settings == null)
+                    return false;
+
+                FieldInfo uiVisibleField = settings.GetType().GetField("UiVisible", flags);
+                if (uiVisibleField == null || uiVisibleField.FieldType != typeof(bool))
+                    return false;
+
+                uiVisibleField.SetValue(settings, visible);
+                LogInfo($"club-lights ui applied via settings reason={reason} visible={visible} pluginEnabled={enabledAfter}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogWarn($"club-lights ui apply failed reason={reason} error={ex.Message}");
+                return false;
+            }
+        }
+
+        private bool TryGetClubLightsPluginInstance(out object instance, out Type instanceType)
+        {
+            instance = null;
+            instanceType = null;
+            try
+            {
+                if (Chainloader.PluginInfos != null &&
+                    Chainloader.PluginInfos.TryGetValue("com.kks.maingame.clublights", out var pluginInfo))
+                {
+                    instance = pluginInfo?.Instance;
+                    if (instance != null)
+                    {
+                        instanceType = instance.GetType();
+                        return true;
+                    }
+                }
+            }
+            catch
+            {
+                // fallback below
+            }
+
+            Type pluginType = Type.GetType("MainGameClubLights.Plugin, MainGameClubLights");
+            if (pluginType == null)
+                return false;
+
+            try
+            {
+                PropertyInfo instanceProp = pluginType.GetProperty(
+                    "Instance",
+                    BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                object staticInstance = instanceProp?.GetValue(null, null);
+                if (staticInstance != null)
+                {
+                    instance = staticInstance;
+                    instanceType = staticInstance.GetType();
+                    return true;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            try
+            {
+                UnityEngine.Object[] instances = UnityEngine.Object.FindObjectsOfType(pluginType);
+                if (instances != null && instances.Length > 0)
+                {
+                    instance = instances[0];
+                    if (instance != null)
+                    {
+                        instanceType = instance.GetType();
+                        return true;
+                    }
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return false;
+        }
+
+        // ── MainGameDollMode 人形モード ───────────────────────────────
+
+        private bool TryGetDollModeEnabled(out bool enabled)
+        {
+            enabled = false;
+            try
+            {
+                Type pluginType = Type.GetType("MainGameDollMode.Plugin, MainGameDollMode");
+                if (pluginType == null)
+                    return false;
+
+                MethodInfo getter = pluginType.GetMethod(
+                    "IsDollModeEnabled",
+                    BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic,
+                    null,
+                    Type.EmptyTypes,
+                    null);
+                if (getter == null || getter.ReturnType != typeof(bool))
+                    return false;
+
+                object raw = getter.Invoke(null, null);
+                if (raw is bool b)
+                {
+                    enabled = b;
+                    return true;
+                }
+
+                return false;
+            }
+            catch (Exception ex)
+            {
+                LogWarn($"doll-mode snapshot failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        private bool TryApplyDollModeEnabled(bool enabled, string reason)
+        {
+            try
+            {
+                Type pluginType = Type.GetType("MainGameDollMode.Plugin, MainGameDollMode");
+                if (pluginType == null)
+                    return false;
+
+                MethodInfo setterWithSource = pluginType.GetMethod(
+                    "SetDollModeEnabled",
+                    BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic,
+                    null,
+                    new[] { typeof(bool), typeof(string) },
+                    null);
+                if (setterWithSource != null && setterWithSource.ReturnType == typeof(bool))
+                {
+                    object raw = setterWithSource.Invoke(null, new object[] { enabled, "blankmapadd:" + reason });
+                    bool ok = raw is bool b && b;
+                    if (ok)
+                    {
+                        LogInfo($"doll-mode applied reason={reason} enabled={enabled} mode=with-source");
+                        return true;
+                    }
+                }
+
+                MethodInfo setter = pluginType.GetMethod(
+                    "SetDollModeEnabled",
+                    BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic,
+                    null,
+                    new[] { typeof(bool) },
+                    null);
+                if (setter == null || setter.ReturnType != typeof(bool))
+                    return false;
+
+                object rawFallback = setter.Invoke(null, new object[] { enabled });
+                bool okFallback = rawFallback is bool fb && fb;
+                if (okFallback)
+                {
+                    LogInfo($"doll-mode applied reason={reason} enabled={enabled} mode=default");
+                }
+                else
+                {
+                    LogWarn($"doll-mode apply rejected reason={reason} enabled={enabled}");
+                }
+
+                return okFallback;
+            }
+            catch (Exception ex)
+            {
+                LogWarn($"doll-mode apply failed reason={reason} error={ex.Message}");
+                return false;
+            }
+        }
+
+        // ── VoiceFaceEventBridge 体位変更 ─────────────────────────────
+
+        private bool TryGetVfebPoseChangeEnabled(out bool enabled)
+        {
+            enabled = false;
+            try
+            {
+                if (!TryGetVfebPluginInstance(out object instance, out Type instType))
+                    return false;
+                const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+
+                FieldInfo field = instType.GetField("_poseChangeEnabled", flags);
+                if (field == null || field.FieldType != typeof(bool))
+                    return false;
+
+                enabled = (bool)field.GetValue(instance);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogWarn($"vfeb pose-change get failed: {ex.Message}");
+                return false;
+            }
+        }
+
+        private bool TryApplyVfebPoseChangeEnabled(bool enabled, string reason)
+        {
+            try
+            {
+                if (!TryGetVfebPluginInstance(out object instance, out Type instType))
+                    return false;
+                const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+
+                // _poseChangeEnabled フィールド
+                FieldInfo field = instType.GetField("_poseChangeEnabled", flags);
+                if (field != null && field.FieldType == typeof(bool))
+                    field.SetValue(instance, enabled);
+
+                // _cfgPoseChangeEnabled ConfigEntry
+                SetConfigEntryBool(instType, instance, "_cfgPoseChangeEnabled", enabled);
+
+                LogInfo($"vfeb pose-change applied reason={reason} enabled={enabled}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogWarn($"vfeb pose-change apply failed reason={reason} error={ex.Message}");
+                return false;
+            }
+        }
+
+        private bool TryGetVfebPluginInstance(out object instance, out Type instanceType)
+        {
+            instance = null;
+            instanceType = null;
+            try
+            {
+                if (Chainloader.PluginInfos != null &&
+                    Chainloader.PluginInfos.TryGetValue("com.kks.maingame.voicefaceeventbridge", out var pluginInfo))
+                {
+                    instance = pluginInfo?.Instance;
+                    if (instance != null)
+                    {
+                        instanceType = instance.GetType();
+                        return true;
+                    }
+                }
+            }
+            catch { }
+            return false;
+        }
+
         private static Type ResolveAfterimagePluginType()
         {
             Type pluginType = Type.GetType("SimpleAfterimage.Plugin, SimpleAfterimage");

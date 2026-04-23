@@ -36,8 +36,8 @@ namespace MainGameSpeedLimitBreak
                 return;
             }
 
-            float fromMin = s.SourceMinSpeed;
-            float fromMax = Mathf.Max(fromMin + 0.0001f, s.SourceMaxSpeed);
+            GetEffectiveSourceRange(out float fromMin, out float fromMax);
+            fromMax = Mathf.Max(fromMin + 0.0001f, fromMax);
 
             flags.speedCalc = gauge01;
             flags.speedUpClac = new Vector2(gauge01, gauge01);
@@ -45,7 +45,7 @@ namespace MainGameSpeedLimitBreak
 
             if (flags.mode == HFlag.EMode.aibu)
             {
-                float speedCap = Mathf.Max(0.0001f, flags.speedMaxBody > 0f ? flags.speedMaxBody : s.SourceMaxSpeed);
+                float speedCap = Mathf.Max(0.0001f, flags.speedMaxBody > 0f ? flags.speedMaxBody : fromMax);
                 float desired = speedCap * gauge01;
                 flags.speed = desired;
                 flags.speedItem = desired;
@@ -127,10 +127,10 @@ namespace MainGameSpeedLimitBreak
                 return true;
             }
 
-            float fromMin = s.SourceMinSpeed;
-            float fromMax = Mathf.Max(fromMin + 0.0001f, s.SourceMaxSpeed);
-            float sourceForGauge = Mathf.Clamp(s.TargetMaxSpeed, fromMin, fromMax);
-            gauge01 = Mathf.Clamp01(Mathf.InverseLerp(fromMin, fromMax, sourceForGauge));
+            GetEffectiveSourceRange(out float effMin, out float effMax);
+            effMax = Mathf.Max(effMin + 0.0001f, effMax);
+            float sourceForGauge = Mathf.Clamp(s.TargetMaxSpeed, effMin, effMax);
+            gauge01 = Mathf.Clamp01(Mathf.InverseLerp(effMin, effMax, sourceForGauge));
             reason = "derived-target-max";
             return true;
         }

@@ -219,10 +219,10 @@ namespace MainGameSpeedLimitBreak
                 return 0f;
             }
 
-            float fromMin = s.SourceMinSpeed;
-            float fromMax = Mathf.Max(fromMin + 0.0001f, s.SourceMaxSpeed);
-            float sourceForGauge = Mathf.Clamp(s.TargetMaxSpeed, fromMin, fromMax);
-            return Mathf.Clamp01(Mathf.InverseLerp(fromMin, fromMax, sourceForGauge));
+            GetEffectiveSourceRange(out float effMin, out float effMax);
+            effMax = Mathf.Max(effMin + 0.0001f, effMax);
+            float sourceForGauge = Mathf.Clamp(s.TargetMaxSpeed, effMin, effMax);
+            return Mathf.Clamp01(Mathf.InverseLerp(effMin, effMax, sourceForGauge));
         }
 
         private void StartTimelineGaugeTransition(

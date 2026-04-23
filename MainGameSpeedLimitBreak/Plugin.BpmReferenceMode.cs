@@ -9,8 +9,21 @@ namespace MainGameSpeedLimitBreak
         private enum BpmReferenceMode
         {
             Sonyu = 0,
-            Houshi = 1
+            Houshi = 1,
+            MasturbationStage1 = 2,
+            MasturbationStage2 = 3,
+            MasturbationClimax = 4,
+            MasturbationOLoop = 5
         }
+
+        private const float MasturbationStage1BpmMin = 15.8f;
+        private const float MasturbationStage1BpmMax = 97.8f;
+        private const float MasturbationStage2BpmMin = 23.6f;
+        private const float MasturbationStage2BpmMax = 149.6f;
+        private const float MasturbationClimaxBpmMin = 39.0f;
+        private const float MasturbationClimaxBpmMax = 257.0f;
+        private const float MasturbationOLoopBpmMin = 31.7f;
+        private const float MasturbationOLoopBpmMax = 430.0f;
 
         private BpmReferenceMode _activeBpmReferenceMode = BpmReferenceMode.Sonyu;
         private string _lastBpmReferenceAnimationName = string.Empty;
@@ -52,7 +65,21 @@ namespace MainGameSpeedLimitBreak
 
             float beforeTargetMin = settings.TargetMinSpeed;
             float beforeTargetMax = settings.TargetMaxSpeed;
-            ApplyStoredCalibrationToWorkingValues(settings, mode, pushConfigEntries: true);
+
+            bool isMasturbation = IsHardcodedMasturbationReferenceMode(mode);
+            if (isMasturbation && !_masturbationSourceRangeActive)
+            {
+                _masturbationSourceRangeActive = true;
+                LogInfo($"source range switched to masturbation: effective=[{MasturbationEffectiveSourceMin:0.###}..{MasturbationEffectiveSourceMax:0.###}] stored=[{settings.SourceMinSpeed:0.###}..{settings.SourceMaxSpeed:0.###}]");
+            }
+            else if (!isMasturbation && _masturbationSourceRangeActive)
+            {
+                _masturbationSourceRangeActive = false;
+                LogInfo($"source range restored to stored: [{settings.SourceMinSpeed:0.###}..{settings.SourceMaxSpeed:0.###}]");
+            }
+
+            bool pushConfigEntries = !isMasturbation;
+            ApplyStoredCalibrationToWorkingValues(settings, mode, pushConfigEntries);
             EnsureAppliedBpmRangeInitialized(settings);
             ApplyAppliedRangeToTargetSpeeds(settings, settings.AppliedBpmMin, settings.AppliedBpmMax);
 
@@ -116,6 +143,30 @@ namespace MainGameSpeedLimitBreak
             HSceneProc.AnimationListInfo nowInfo = flags.nowAnimationInfo;
             animationName = nowInfo?.nameAnimation ?? string.Empty;
 
+            bool isMasturbationByFlags = IsMasturbationReferenceTarget(flags.mode);
+            bool isMasturbationByNowInfo = nowInfo != null && IsMasturbationReferenceTarget(nowInfo.mode);
+            if (isMasturbationByFlags || isMasturbationByNowInfo)
+            {
+                if (TryResolveMasturbationReferenceMode(out BpmReferenceMode masturbationMode, out string clipName))
+                {
+                    mode = masturbationMode;
+                    animationName = string.IsNullOrWhiteSpace(clipName) ? animationName : clipName;
+                    source = "animator.clip(masturbation)";
+                    return true;
+                }
+
+                mode = BpmReferenceMode.MasturbationStage1;
+                if (string.IsNullOrWhiteSpace(animationName))
+                {
+                    animationName = "masturbation";
+                }
+
+                source = isMasturbationByFlags
+                    ? "flags.mode(masturbation-fallback)"
+                    : "flags.nowAnimationInfo.mode(masturbation-fallback)";
+                return true;
+            }
+
             if (TryMapHModeToReferenceMode(flags.mode, out BpmReferenceMode modeByFlags))
             {
                 mode = modeByFlags;
@@ -155,6 +206,120 @@ namespace MainGameSpeedLimitBreak
             }
         }
 
+        private static bool IsMasturbationReferenceTarget(HFlag.EMode mode)
+        {
+            string name = mode.ToString();
+            return string.Equals(name, "masturbation", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private bool TryResolveMasturbationReferenceMode(out BpmReferenceMode mode, out string clipName)
+        {
+            mode = BpmReferenceMode.MasturbationStage1;
+            clipName = string.Empty;
+
+            if (!TryGetPrimaryFemale(out ChaControl female) || female == null)
+            {
+                return false;
+            }
+
+            Animator animator = female.animBody;
+            if (animator == null)
+            {
+                return false;
+            }
+
+            var clips = animator.GetCurrentAnimatorClipInfo(0);
+            if (clips == null || clips.Length <= 0 || clips[0].clip == null)
+            {
+                return false;
+            }
+
+            clipName = NormalizeMasturbationTraceToken(clips[0].clip.name);
+            if (string.IsNullOrWhiteSpace(clipName))
+            {
+                return false;
+            }
+
+            return TryMapMasturbationClipToReferenceMode(clipName, out mode);
+        }
+
+        private static bool TryMapMasturbationClipToReferenceMode(string clipName, out BpmReferenceMode mode)
+        {
+            mode = BpmReferenceMode.MasturbationStage1;
+            if (string.IsNullOrWhiteSpace(clipName))
+            {
+                return false;
+            }
+
+            string normalized = clipName.Trim().ToLowerInvariant();
+            if (normalized.Contains("oloop"))
+            {
+                mode = BpmReferenceMode.MasturbationOLoop;
+                return true;
+            }
+
+            if (normalized.Contains("sloop"))
+            {
+                mode = BpmReferenceMode.MasturbationClimax;
+                return true;
+            }
+
+            if (normalized.Contains("mloop"))
+            {
+                mode = BpmReferenceMode.MasturbationStage2;
+                return true;
+            }
+
+            if (normalized.Contains("wloop"))
+            {
+                mode = BpmReferenceMode.MasturbationStage1;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsHardcodedMasturbationReferenceMode(BpmReferenceMode mode)
+        {
+            switch (mode)
+            {
+                case BpmReferenceMode.MasturbationStage1:
+                case BpmReferenceMode.MasturbationStage2:
+                case BpmReferenceMode.MasturbationClimax:
+                case BpmReferenceMode.MasturbationOLoop:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        private static bool TryGetHardcodedMasturbationCalibrationPair(BpmReferenceMode mode, out float minRef, out float maxRef)
+        {
+            switch (mode)
+            {
+                case BpmReferenceMode.MasturbationStage1:
+                    minRef = MasturbationStage1BpmMin;
+                    maxRef = MasturbationStage1BpmMax;
+                    return true;
+                case BpmReferenceMode.MasturbationStage2:
+                    minRef = MasturbationStage2BpmMin;
+                    maxRef = MasturbationStage2BpmMax;
+                    return true;
+                case BpmReferenceMode.MasturbationClimax:
+                    minRef = MasturbationClimaxBpmMin;
+                    maxRef = MasturbationClimaxBpmMax;
+                    return true;
+                case BpmReferenceMode.MasturbationOLoop:
+                    minRef = MasturbationOLoopBpmMin;
+                    maxRef = MasturbationOLoopBpmMax;
+                    return true;
+                default:
+                    minRef = 0f;
+                    maxRef = 1f;
+                    return false;
+            }
+        }
+
         private static BpmReferenceMode ClassifyBpmReferenceMode(string animationName, BpmReferenceMode fallback)
         {
             if (string.IsNullOrWhiteSpace(animationName))
@@ -181,7 +346,21 @@ namespace MainGameSpeedLimitBreak
 
         private static string GetBpmReferenceModeLabel(BpmReferenceMode mode)
         {
-            return mode == BpmReferenceMode.Houshi ? "奉仕" : "挿入";
+            switch (mode)
+            {
+                case BpmReferenceMode.Houshi:
+                    return "奉仕";
+                case BpmReferenceMode.MasturbationStage1:
+                    return "オナニー第1";
+                case BpmReferenceMode.MasturbationStage2:
+                    return "オナニー第2";
+                case BpmReferenceMode.MasturbationClimax:
+                    return "オナニー(イキ)";
+                case BpmReferenceMode.MasturbationOLoop:
+                    return "オナニー(OLoop)";
+                default:
+                    return "挿入";
+            }
         }
 
         private static void NormalizeCalibrationPair(ref float minRef, ref float maxRef)
@@ -208,6 +387,12 @@ namespace MainGameSpeedLimitBreak
             out float minRef,
             out float maxRef)
         {
+            if (TryGetHardcodedMasturbationCalibrationPair(mode, out minRef, out maxRef))
+            {
+                NormalizeCalibrationPair(ref minRef, ref maxRef);
+                return;
+            }
+
             minRef = 0f;
             maxRef = 1f;
             if (settings == null)
@@ -235,6 +420,11 @@ namespace MainGameSpeedLimitBreak
             float minRef,
             float maxRef)
         {
+            if (IsHardcodedMasturbationReferenceMode(mode))
+            {
+                return;
+            }
+
             if (settings == null)
             {
                 return;
@@ -294,6 +484,11 @@ namespace MainGameSpeedLimitBreak
         private void SyncCalibrationConfigEntriesForMode(PluginSettings settings, BpmReferenceMode mode)
         {
             if (settings == null || _cfgBpmReferenceAtSourceMin == null || _cfgBpmReferenceAtSourceMax == null)
+            {
+                return;
+            }
+
+            if (IsHardcodedMasturbationReferenceMode(mode))
             {
                 return;
             }

@@ -294,19 +294,30 @@ namespace MainGameBlankMapAdd
                 return;
             }
 
-            bool byDate = string.Equals(_settings?.FolderPlaySortMode, "Date", StringComparison.OrdinalIgnoreCase);
+            string sortMode = _settings?.FolderPlaySortMode ?? "Name";
+            bool isRandom = string.Equals(sortMode, "Random", StringComparison.OrdinalIgnoreCase);
+            bool byDate = string.Equals(sortMode, "Date", StringComparison.OrdinalIgnoreCase);
             bool asc = _settings?.FolderPlaySortAscending ?? true;
             var files = Directory.GetFiles(folder, "*", SearchOption.TopDirectoryOnly)
                 .Where(f => _videoExtensions.Contains(
                     Path.GetExtension(f), StringComparer.OrdinalIgnoreCase));
-            IOrderedEnumerable<string> sorted = byDate
-                ? (asc
-                    ? files.OrderBy(f => File.GetLastWriteTime(f))
-                    : files.OrderByDescending(f => File.GetLastWriteTime(f)))
-                : (asc
-                    ? files.OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
-                    : files.OrderByDescending(f => f, StringComparer.OrdinalIgnoreCase));
-            FolderFiles = sorted.ToArray();
+            if (isRandom)
+            {
+                var list = files.ToList();
+                ShuffleList(list);
+                FolderFiles = list.ToArray();
+            }
+            else
+            {
+                IOrderedEnumerable<string> sorted = byDate
+                    ? (asc
+                        ? files.OrderBy(f => File.GetLastWriteTime(f))
+                        : files.OrderByDescending(f => File.GetLastWriteTime(f)))
+                    : (asc
+                        ? files.OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+                        : files.OrderByDescending(f => f, StringComparer.OrdinalIgnoreCase));
+                FolderFiles = sorted.ToArray();
+            }
             FolderIndex = FolderFiles.Length > 0 ? 0 : -1;
             // フォルダ切り替え時点の全設定をベースラインとして保存（動画個別設定なし時の戻し先）
             FolderBaselineProfile = CaptureCurrentRoomLayoutProfile(includeAudioGain: true, markAsRoomLayout: true);
@@ -336,6 +347,18 @@ namespace MainGameBlankMapAdd
                 FolderBaselineProfile.SpeedAppliedBpmMax = baselineSlb.AppliedBpmMax;
             }
             LogInfo($"folder play: scanned path={folder} count={FolderFiles.Length}");
+        }
+
+        private static void ShuffleList(System.Collections.Generic.List<string> list)
+        {
+            var rng = new System.Random();
+            for (int i = list.Count - 1; i > 0; i--)
+            {
+                int j = rng.Next(i + 1);
+                string tmp = list[i];
+                list[i] = list[j];
+                list[j] = tmp;
+            }
         }
 
         internal void ForceFolderRescan()

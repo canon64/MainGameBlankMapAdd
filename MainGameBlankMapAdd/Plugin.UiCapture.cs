@@ -21,6 +21,8 @@ namespace MainGameBlankMapAdd
         private bool _gizmoDragCaptureHint;
         private bool _uiCaptureForceUnlockRestore;
         private Coroutine _uiCaptureEndOfFrameRoutine;
+        private float _uiCaptureHoldUntil;
+        private const float UiCaptureReleaseGraceSec = 0.15f;
 
         private void LateUpdate()
         {
@@ -42,8 +44,10 @@ namespace MainGameBlankMapAdd
         private void UpdateUiCaptureState()
         {
             bool wantCapture = ShouldCaptureUi(out string reason);
+            float now = Time.unscaledTime;
             if (wantCapture)
             {
+                _uiCaptureHoldUntil = now + UiCaptureReleaseGraceSec;
                 if (!_uiCaptureActive)
                 {
                     StartUiCapture(reason);
@@ -53,7 +57,19 @@ namespace MainGameBlankMapAdd
                 return;
             }
 
-            if (_uiCaptureActive || NeedsUiCaptureRecovery())
+            // 判定の一瞬の揺れで ON/OFF を連打しないよう、短い猶予を設ける。
+            if (_uiCaptureActive && now < _uiCaptureHoldUntil)
+            {
+                TickUiCapture();
+                return;
+            }
+
+            if (_uiCaptureActive ||
+                _hasPrevCtrlCameraCursorLock ||
+                _hasPrevCtrlCameraNoCtrl ||
+                _hasPrevCtrlCameraKeyCondition ||
+                _hasPrevGameCursorLock ||
+                _hasPrevActionSceneCursorLock)
             {
                 StopUiCapture("ui interaction ended");
             }
@@ -100,6 +116,7 @@ namespace MainGameBlankMapAdd
             if (!IsPlaybackBarReady()) return false;
             if (_playbackSeekDragging) return true;
             if (_playbackVolumeDragging) return true;
+            if (_playbackGainDragging) return true;
             if (!Input.GetMouseButton(0)) return false;
 
             float barHeight = Mathf.Max(GetPlaybackBarMinHeightPx(), _settings.PlaybackBarHeight);

@@ -13,6 +13,7 @@ namespace MainGameBlankMapAdd
     {
         private bool _configDirty;
         private bool _syncingConfig;
+        private string _lastAppliedConfigSignature = string.Empty;
         private string _presetDir;
         private const string PresetNone = "(none)";
         private ConfigEntry<string> _cfgPresetName;
@@ -324,13 +325,7 @@ namespace MainGameBlankMapAdd
                 "06.Reverb",
                 "EnableVoiceReverb",
                 _settings.EnableVoiceReverb,
-                new ConfigDescription(
-                    "リバーブ有効（再生バー側で制御する内部値）",
-                    null,
-                    new ConfigurationManager.ConfigurationManagerAttributes
-                    {
-                        Browsable = false
-                    }));
+                "リバーブ有効");
             _cfgVoiceReverbPreset = Config.Bind("06.Reverb", "VoiceReverbPreset",
                 NormalizeString(_settings.VoiceReverbPreset),
                 new ConfigDescription("AudioReverbPreset名",
@@ -426,6 +421,11 @@ namespace MainGameBlankMapAdd
         {
             if (!_configDirty) return;
             _configDirty = false;
+
+            string currentSignature = BuildConfigSignature();
+            if (string.Equals(currentSignature, _lastAppliedConfigSignature, StringComparison.Ordinal))
+                return;
+
             ApplyConfigToSettings(rebuildRoom: true, reason: "changed");
         }
 
@@ -509,6 +509,7 @@ namespace MainGameBlankMapAdd
 
             var settingsPath = Path.Combine(_pluginDir, "MapAddSettings.json");
             SettingsStore.Save(settingsPath, _settings);
+            _lastAppliedConfigSignature = BuildConfigSignature();
 
             LogInfo($"config applied reason={reason} mapNo={_settings.AddedMapNo} video={_settings.VideoPath}");
 
@@ -1364,6 +1365,85 @@ namespace MainGameBlankMapAdd
         private static string NormalizeString(string value)
         {
             return string.IsNullOrEmpty(value) ? string.Empty : value.Trim();
+        }
+
+        private string BuildConfigSignature()
+        {
+            var sb = new System.Text.StringBuilder(1024);
+
+            void AddBool(bool value) => sb.Append(value ? '1' : '0').Append('|');
+            void AddInt(int value) => sb.Append(value).Append('|');
+            void AddFloat(float value) => sb.Append(value.ToString("R", System.Globalization.CultureInfo.InvariantCulture)).Append('|');
+            void AddText(string value) => sb.Append(NormalizeString(value)).Append('|');
+
+            AddInt(_cfgAddedMapNo?.Value ?? 0);
+            AddInt(_cfgSourceMapNo?.Value ?? 0);
+            AddText(_cfgAddedMapName?.Value);
+            AddText(_cfgAddedDisplayName?.Value);
+            AddInt(_cfgAddedSort?.Value ?? 0);
+            AddBool(_cfgForceIsGate?.Value ?? false);
+            AddBool(_cfgForceIsFreeH?.Value ?? false);
+            AddBool(_cfgForceIsH?.Value ?? false);
+            AddInt(_cfgAddedThumbnailID?.Value ?? 0);
+
+            AddBool(_cfgBlankifySceneOnLoad?.Value ?? true);
+            AddBool(_cfgDisableRenderers?.Value ?? true);
+            AddBool(_cfgDisableTerrains?.Value ?? true);
+            AddBool(_cfgDisableLights?.Value ?? true);
+            AddBool(_cfgDisableParticles?.Value ?? true);
+            AddBool(_cfgDisableAudioSources?.Value ?? true);
+
+            AddBool(_cfgEnableVideoRoom?.Value ?? false);
+            AddText(_cfgVideoPath?.Value);
+            AddBool(_cfgUseFloorVideoOverride?.Value ?? false);
+            AddText(_cfgFloorOverrideVideoPath?.Value);
+            AddBool(_cfgUseCeilingVideoOverride?.Value ?? false);
+            AddText(_cfgCeilingOverrideVideoPath?.Value);
+            AddBool(_cfgVideoLoop?.Value ?? false);
+            AddBool(_cfgMuteVideoAudio?.Value ?? false);
+            AddBool(_cfgAutoPlayOnMapLoad?.Value ?? false);
+            AddFloat(_cfgVideoVolume?.Value ?? 0f);
+            AddFloat(_cfgVideoAudioGain?.Value ?? 1f);
+            AddBool(_cfgApplyReverbToVideoAudio?.Value ?? false);
+            AddBool(_cfgEnablePlaybackBar?.Value ?? false);
+            AddBool(_cfgEnableUiHelpPopup?.Value ?? false);
+            AddFloat(_cfgPlaybackBarShowMouseBottomPx?.Value ?? 0f);
+            AddFloat(_cfgPlaybackBarHeight?.Value ?? 0f);
+            AddFloat(_cfgPlaybackBarMarginX?.Value ?? 0f);
+            AddFloat(_cfgPlaybackBarButtonWidth?.Value ?? 0f);
+            AddInt(_cfgCubeFaceTileCount?.Value ?? 1);
+            AddBool(_cfgUseWebCam?.Value ?? false);
+            AddText(_cfgWebCamDevice?.Value);
+
+            AddText(_cfgFolderPlayPath?.Value);
+            AddBool(_cfgFolderPlayLoop?.Value ?? false);
+            AddBool(_cfgFolderPlaySingleLoop?.Value ?? false);
+            AddText(_cfgFolderPlaySortMode?.Value);
+            AddBool(_cfgFolderPlaySortAscending?.Value ?? true);
+            AddFloat(_cfgFolderFadeDuration?.Value ?? 0f);
+            AddBool(_cfgHttpEnabled?.Value ?? false);
+            AddInt(_cfgHttpPort?.Value ?? 0);
+            AddBool(_cfgSyncVoiceSourcesToVideoRoom?.Value ?? false);
+
+            AddFloat(_cfgRoomWidth?.Value ?? 0f);
+            AddFloat(_cfgRoomDepth?.Value ?? 0f);
+            AddFloat(_cfgRoomHeight?.Value ?? 0f);
+            AddFloat(_cfgVideoRoomOffsetX?.Value ?? 0f);
+            AddFloat(_cfgVideoRoomOffsetY?.Value ?? 0f);
+            AddFloat(_cfgVideoRoomOffsetZ?.Value ?? 0f);
+            AddFloat(_cfgVideoRoomRotationX?.Value ?? 0f);
+            AddFloat(_cfgVideoRoomRotationY?.Value ?? 0f);
+            AddFloat(_cfgVideoRoomRotationZ?.Value ?? 0f);
+
+            AddBool(_cfgUseSphere?.Value ?? false);
+            AddFloat(_cfgSphereRadius?.Value ?? 0f);
+            AddBool(_cfgSphereInsideView?.Value ?? false);
+
+            AddBool(_cfgEnableVoiceReverb?.Value ?? false);
+            AddText(_cfgVoiceReverbPreset?.Value);
+            AddBool(_cfgVerboseLog?.Value ?? false);
+
+            return sb.ToString();
         }
 
         private const int HResultCanceled = unchecked((int)0x800704C7);

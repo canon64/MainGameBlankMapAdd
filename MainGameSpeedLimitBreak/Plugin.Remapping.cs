@@ -28,11 +28,11 @@ namespace MainGameSpeedLimitBreak
             if (!isSpeed && !isSpeedBody)
                 return false;
 
-            if (s.IgnoreValuesBelowSourceMin && value < s.SourceMinSpeed)
+            GetEffectiveSourceRange(out float fromMin, out float fromMax);
+            if (s.IgnoreValuesBelowSourceMin && value < fromMin)
                 return false;
 
-            float fromMin = s.SourceMinSpeed;
-            float fromMax = Mathf.Max(fromMin + 0.0001f, s.SourceMaxSpeed);
+            fromMax = Mathf.Max(fromMin + 0.0001f, fromMax);
             float toMin = s.TargetMinSpeed;
             float toMax = Mathf.Max(toMin, s.TargetMaxSpeed);
 
@@ -52,6 +52,97 @@ namespace MainGameSpeedLimitBreak
             }
 
             return true;
+        }
+
+        internal void RemapMasturbationAnimatorSpeed()
+        {
+            var s = Settings;
+            bool trace = s != null && s.EnablePerFrameTrace && Time.unscaledTime >= _nextVerboseLogTime;
+
+            if (!_masturbationSourceRangeActive)
+            {
+                if (trace) { _nextVerboseLogTime = Time.unscaledTime + 1f; LogInfo("[remap-mast] skip: mastSrcActive=false"); }
+                return;
+            }
+
+            if (s == null || !s.Enabled)
+            {
+                if (trace) { _nextVerboseLogTime = Time.unscaledTime + 1f; LogInfo("[remap-mast] skip: settings null or disabled"); }
+                return;
+            }
+
+            if (s.ForceVanillaSpeed)
+            {
+                if (trace) { _nextVerboseLogTime = Time.unscaledTime + 1f; LogInfo("[remap-mast] skip: ForceVanilla"); }
+                return;
+            }
+
+            if (!s.EnableBpmSpeedRemap.GetValueOrDefault(true))
+            {
+                if (trace) { _nextVerboseLogTime = Time.unscaledTime + 1f; LogInfo("[remap-mast] skip: BpmRemap OFF"); }
+                return;
+            }
+
+            if (!TryGetPrimaryFemale(out ChaControl female) || female == null)
+            {
+                if (trace) { _nextVerboseLogTime = Time.unscaledTime + 1f; LogInfo("[remap-mast] skip: no female"); }
+                return;
+            }
+
+            Animator animator = female.animBody;
+            if (animator == null)
+            {
+                if (trace) { _nextVerboseLogTime = Time.unscaledTime + 1f; LogInfo("[remap-mast] skip: animator null"); }
+                return;
+            }
+
+            float current = animator.speed;
+            GetEffectiveSourceRange(out float fromMin, out float fromMax);
+            fromMax = Mathf.Max(fromMin + 0.0001f, fromMax);
+            float toMin = s.TargetMinSpeed;
+            float toMax = Mathf.Max(toMin, s.TargetMaxSpeed);
+
+            float t = Mathf.InverseLerp(fromMin, fromMax, current);
+            float mapped = Mathf.Lerp(toMin, toMax, t);
+
+            if (Mathf.Approximately(mapped, current))
+            {
+                if (trace) { _nextVerboseLogTime = Time.unscaledTime + 1f; LogInfo($"[remap-mast] skip: approx equal cur={current:0.###} mapped={mapped:0.###}"); }
+                return;
+            }
+
+            animator.speed = mapped;
+
+            // ディルドなど同じ骨格に紐付いた別Animatorにも同じmapped speedを適用
+            ApplySpeedToChildAnimators(female.gameObject, animator, mapped);
+
+            if (trace)
+            {
+                _nextVerboseLogTime = Time.unscaledTime + Mathf.Max(0.1f, s.LogIntervalSec);
+                LogInfo($"[remap-mast] applied in={current:0.###} out={mapped:0.###} src=[{fromMin:0.###},{fromMax:0.###}] dst=[{toMin:0.###},{toMax:0.###}]");
+            }
+        }
+
+        private static readonly string[] MasturbationItemAnimatorNames = { "p_item_dildo" };
+
+        private static void ApplySpeedToChildAnimators(UnityEngine.GameObject root, Animator exclude, float speed)
+        {
+            if (root == null) return;
+            var animators = root.GetComponentsInChildren<Animator>(includeInactive: true);
+            if (animators == null) return;
+            foreach (var anim in animators)
+            {
+                if (anim == null || anim == exclude) continue;
+                string n = anim.gameObject.name;
+                foreach (string target in MasturbationItemAnimatorNames)
+                {
+                    if (string.Equals(n, target, System.StringComparison.OrdinalIgnoreCase))
+                    {
+                        anim.speed = speed;
+                        break;
+                    }
+                }
+            }
         }
 
         internal bool TryHijackWaitSpeedProc(HFlag flags, bool isLock, AnimationCurve curve)
@@ -92,8 +183,8 @@ namespace MainGameSpeedLimitBreak
             float desiredSpeed = s.AutoSonyuHijackUseSourceMax ? s.TargetMaxSpeed : s.AutoSonyuHijackFixedSourceSpeed;
             desiredSpeed = Mathf.Max(0f, desiredSpeed);
 
-            float fromMin = s.SourceMinSpeed;
-            float fromMax = Mathf.Max(fromMin + 0.0001f, s.SourceMaxSpeed);
+            GetEffectiveSourceRange(out float fromMin, out float fromMax);
+            fromMax = Mathf.Max(fromMin + 0.0001f, fromMax);
             float sourceForGauge = Mathf.Clamp(desiredSpeed, fromMin, fromMax);
             float calc = Mathf.Clamp01(Mathf.InverseLerp(fromMin, fromMax, sourceForGauge));
 
@@ -132,43 +223,49 @@ namespace MainGameSpeedLimitBreak
             if (s.ForceVanillaSpeed)
                 return false;
 
-            // WaitSpeedProcAibu もH内限定呼び出し。タイムライン時は常に入口乗っ取りする。
-            if (!IsTimelineHijackActive())
-                return false;
-
-            // Aibu系は speed がそのままゲージ値になる。
-            float speedCap = Mathf.Max(0.0001f, flags.speedMaxBody > 0f ? flags.speedMaxBody : s.SourceMaxSpeed);
-            float desired = _timelineGaugeOverrideEnabled && _timelineGaugeOverride01 >= 0f
-                ? speedCap * Mathf.Clamp01(_timelineGaugeOverride01)
-                : Mathf.Clamp(s.TargetMaxSpeed, 0f, speedCap);
-
-            flags.speed = desired;
-            flags.speedItem = desired;
-            flags.speedUpClac = new Vector2(desired, desired);
-            flags.timeNoClick = 0f;
-
-            if (flags.voice != null)
+            // Timeline hijack takes priority.
+            if (IsTimelineHijackActive())
             {
-                float threshold = flags.speedMaxBody * flags.speedVoiceChangeSpeedRate;
-                if (!flags.voice.speedMotion && flags.speed > threshold)
+                GetEffectiveSourceRange(out float effMin_, out float effMax_);
+                float speedCap = Mathf.Max(0.0001f, flags.speedMaxBody > 0f ? flags.speedMaxBody : effMax_);
+                float desired = _timelineGaugeOverrideEnabled && _timelineGaugeOverride01 >= 0f
+                    ? speedCap * Mathf.Clamp01(_timelineGaugeOverride01)
+                    : Mathf.Clamp(s.TargetMaxSpeed, 0f, speedCap);
+
+                flags.speed = desired;
+                flags.speedItem = desired;
+                flags.speedUpClac = new Vector2(desired, desired);
+                flags.timeNoClick = 0f;
+                UpdateAibuVoiceSpeed(flags);
+
+                if (s.VerboseLog && s.EnablePerFrameTrace && Time.unscaledTime >= _nextTimelineHijackLogTime)
                 {
-                    flags.voice.speedMotion = true;
+                    _nextTimelineHijackLogTime = Time.unscaledTime + Mathf.Max(0.1f, s.LogIntervalSec);
+                    LogInfo(
+                        $"timeline hijack aibu speed={flags.speed:0.###} speedMaxBody={flags.speedMaxBody:0.###} " +
+                        $"gaugeOverride={(_timelineGaugeOverrideEnabled ? _timelineGaugeOverride01.ToString("0.###") : "auto")}");
                 }
-                else if (flags.voice.speedMotion && flags.speed < flags.speedMaxBody - threshold)
-                {
-                    flags.voice.speedMotion = false;
-                }
+
+                return true;
             }
 
-            if (s.VerboseLog && s.EnablePerFrameTrace && Time.unscaledTime >= _nextTimelineHijackLogTime)
-            {
-                _nextTimelineHijackLogTime = Time.unscaledTime + Mathf.Max(0.1f, s.LogIntervalSec);
-                LogInfo(
-                    $"timeline hijack aibu speed={flags.speed:0.###} speedMaxBody={flags.speedMaxBody:0.###} " +
-                    $"gaugeOverride={(_timelineGaugeOverrideEnabled ? _timelineGaugeOverride01.ToString("0.###") : "auto")}");
-            }
+            return false;
+        }
 
-            return true;
+        private static void UpdateAibuVoiceSpeed(HFlag flags)
+        {
+            if (flags == null || flags.voice == null)
+                return;
+
+            float threshold = flags.speedMaxBody * flags.speedVoiceChangeSpeedRate;
+            if (!flags.voice.speedMotion && flags.speed > threshold)
+            {
+                flags.voice.speedMotion = true;
+            }
+            else if (flags.voice.speedMotion && flags.speed < flags.speedMaxBody - threshold)
+            {
+                flags.voice.speedMotion = false;
+            }
         }
 
         private static bool IsHijackTargetMode(HFlag.EMode mode, PluginSettings s)

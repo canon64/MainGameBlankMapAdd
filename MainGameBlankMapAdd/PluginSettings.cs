@@ -101,7 +101,7 @@ namespace MainGameBlankMapAdd
         public bool DisableTerrains = true;
 
         [DataMember(Order = 11)]
-        public bool DisableLights = false;
+        public bool DisableLights = true;
 
         [DataMember(Order = 12)]
         public bool DisableParticles = true;
@@ -228,7 +228,7 @@ namespace MainGameBlankMapAdd
         [DataMember(Order = 58)]
         public bool FolderPlaySingleLoop = false;
 
-        /// <summary>"Name" or "Date"</summary>
+        /// <summary>"Name", "Date", or "Random"</summary>
         [DataMember(Order = 53)]
         public string FolderPlaySortMode = "Name";
 

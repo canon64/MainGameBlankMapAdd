@@ -261,7 +261,8 @@ namespace MainGameBlankMapAdd
 
                     int rendererCount = 0;
                     int terrainCount = 0;
-                    int lightCount = 0;
+                    int lightDisabledCount = 0;
+                    int lightRestoredCount = 0;
                     int particleCount = 0;
 
                     if (_settings.DisableRenderers)
@@ -294,7 +295,18 @@ namespace MainGameBlankMapAdd
                         {
                             if (lights[i] == null || !lights[i].enabled) continue;
                             lights[i].enabled = false;
-                            lightCount++;
+                            lightDisabledCount++;
+                        }
+                    }
+                    else
+                    {
+                        // DisableLights を false にした後、既に消えているライトを復帰する。
+                        var lights = map.mapRoot.GetComponentsInChildren<Light>(true);
+                        for (int i = 0; i < lights.Length; i++)
+                        {
+                            if (lights[i] == null || lights[i].enabled) continue;
+                            lights[i].enabled = true;
+                            lightRestoredCount++;
                         }
                     }
 
@@ -325,7 +337,7 @@ namespace MainGameBlankMapAdd
 
                     LogInfo(
                         $"blankify no={map.no} root={map.mapRoot.name} " +
-                        $"renderers={rendererCount} terrains={terrainCount} lights={lightCount} " +
+                        $"renderers={rendererCount} terrains={terrainCount} lightsOff={lightDisabledCount} lightsRestore={lightRestoredCount} " +
                         $"particles={particleCount} audio={audioCount}");
                 }
             }

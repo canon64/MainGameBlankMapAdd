@@ -221,17 +221,18 @@ namespace MainGameSpeedLimitBreak
 
             BpmReferenceMode mode = ResolveCurrentBpmReferenceMode();
             GetStoredCalibrationPair(s, mode, out float bpmMinRef, out float bpmMaxRef);
-            if (HasTwoPointCalibration(s, bpmMinRef, bpmMaxRef))
+            GetEffectiveSourceRange(out float effMin, out float effMax);
+            if (HasTwoPointCalibration(effMin, effMax, bpmMinRef, bpmMaxRef))
             {
                 float bpmRange = Mathf.Max(0.0001f, bpmMaxRef - bpmMinRef);
-                float sourceRange = Mathf.Max(0.0001f, s.SourceMaxSpeed - s.SourceMinSpeed);
+                float sourceRange = Mathf.Max(0.0001f, effMax - effMin);
                 float t = (bpm - bpmMinRef) / bpmRange;
-                return s.SourceMinSpeed + sourceRange * t;
+                return effMin + sourceRange * t;
             }
 
             float baseBpm = Mathf.Max(1f, bpmMaxRef);
-            float sourceMax = Mathf.Max(0.0001f, s.SourceMaxSpeed);
-            return sourceMax * (bpm / baseBpm);
+            float srcMax = Mathf.Max(0.0001f, effMax);
+            return srcMax * (bpm / baseBpm);
         }
 
         private float EstimateBpmFromMappedSpeed(float mappedSpeed)
@@ -242,27 +243,25 @@ namespace MainGameSpeedLimitBreak
 
             BpmReferenceMode mode = ResolveCurrentBpmReferenceMode();
             GetStoredCalibrationPair(s, mode, out float bpmMinRef, out float bpmMaxRef);
-            if (HasTwoPointCalibration(s, bpmMinRef, bpmMaxRef))
+            GetEffectiveSourceRange(out float effMin, out float effMax);
+            if (HasTwoPointCalibration(effMin, effMax, bpmMinRef, bpmMaxRef))
             {
-                float sourceRange = Mathf.Max(0.0001f, s.SourceMaxSpeed - s.SourceMinSpeed);
+                float sourceRange = Mathf.Max(0.0001f, effMax - effMin);
                 float bpmRange = Mathf.Max(0.0001f, bpmMaxRef - bpmMinRef);
-                float t = (mappedSpeed - s.SourceMinSpeed) / sourceRange;
+                float t = (mappedSpeed - effMin) / sourceRange;
                 return bpmMinRef + bpmRange * t;
             }
 
             float baseBpm = Mathf.Max(1f, bpmMaxRef);
-            float sourceMax = Mathf.Max(0.0001f, s.SourceMaxSpeed);
-            return (mappedSpeed / sourceMax) * baseBpm;
+            float srcMax = Mathf.Max(0.0001f, effMax);
+            return (mappedSpeed / srcMax) * baseBpm;
         }
 
-        private static bool HasTwoPointCalibration(PluginSettings s, float bpmMinRef, float bpmMaxRef)
+        private static bool HasTwoPointCalibration(float sourceMin, float sourceMax, float bpmMinRef, float bpmMaxRef)
         {
-            if (s == null)
-                return false;
-
             return bpmMinRef > 0f
                 && bpmMaxRef > bpmMinRef
-                && s.SourceMaxSpeed > s.SourceMinSpeed + 0.0001f;
+                && sourceMax > sourceMin + 0.0001f;
         }
     }
 }

@@ -9,13 +9,6 @@ namespace MainGameSpeedLimitBreak
     {
         private void OnGUI()
         {
-            var ev = Event.current;
-            if (ev != null && ev.type == EventType.KeyDown && ev.alt && ev.keyCode == KeyCode.S)
-            {
-                ToggleBpmUi("hotkey-ongui");
-                ev.Use();
-            }
-
             if (_showBpmUi)
             {
                 _windowRect = GUI.Window(_windowId, _windowRect, DrawBpmWindow, "SpeedLimitBreak BPM");
@@ -227,6 +220,8 @@ namespace MainGameSpeedLimitBreak
             _bpmMinInput = s.BpmReferenceAtSourceMin.ToString("0.##", CultureInfo.InvariantCulture);
             _bpmMaxInput = s.BpmReferenceAtSpeed3.ToString("0.##", CultureInfo.InvariantCulture);
             _presetNameInput = BuildNextDefaultPresetName();
+            _showBpmUi = s.ShowBpmUi;
+            PushBpmUiVisibilityToConfigEntry(_showBpmUi);
             _lastAppliedPresetOrderIndex = -1;
         }
 
@@ -252,6 +247,26 @@ namespace MainGameSpeedLimitBreak
                 s.EnablePerFrameTrace,
                 "毎フレームのパッチ/タイムライン診断ログを出力します。通常時はOFF推奨です。");
 
+            _cfgEnableMasturbationTransitionTrace = Config.Bind(
+                "Debug",
+                "01 Enable Masturbation Transition Trace",
+                s.EnableMasturbationTransitionTrace,
+                "オナニー中の mode/animation/state/clip/speed 系遷移ログを出力します。");
+
+            _cfgMasturbationTraceIntervalSec = Config.Bind(
+                "Debug",
+                "02 Masturbation Trace Interval Sec",
+                s.MasturbationTraceIntervalSec,
+                new ConfigDescription(
+                    "オナニー遷移ログの定期スナップショット間隔（秒）。",
+                    new AcceptableValueRange<float>(0.1f, 10f)));
+
+            _cfgShowBpmUi = Config.Bind(
+                "UI",
+                "00 Show BPM UI",
+                s.ShowBpmUi,
+                "BPMウィンドウを表示します。LeftAlt+Sでも切り替えできます。");
+
             _cfgBpmReferenceAtSourceMin = Config.Bind(
                 "Calibration",
                 "10 BPM Ref At Source Min",
@@ -269,6 +284,9 @@ namespace MainGameSpeedLimitBreak
             _cfgEnableBpmSpeedRemap.SettingChanged += OnConfigCalibrationChanged;
             _cfgForceVanillaSpeed.SettingChanged += OnConfigCalibrationChanged;
             _cfgEnablePerFrameTrace.SettingChanged += OnConfigCalibrationChanged;
+            _cfgEnableMasturbationTransitionTrace.SettingChanged += OnConfigCalibrationChanged;
+            _cfgMasturbationTraceIntervalSec.SettingChanged += OnConfigCalibrationChanged;
+            _cfgShowBpmUi.SettingChanged += OnConfigCalibrationChanged;
 
             _cfgEnableVideoTimeSpeedCues = Config.Bind(
                 "Video Timeline",
@@ -304,6 +322,9 @@ namespace MainGameSpeedLimitBreak
                 _cfgEnableBpmSpeedRemap == null ||
                 _cfgForceVanillaSpeed == null ||
                 _cfgEnablePerFrameTrace == null ||
+                _cfgEnableMasturbationTransitionTrace == null ||
+                _cfgMasturbationTraceIntervalSec == null ||
+                _cfgShowBpmUi == null ||
                 _cfgBpmReferenceAtSourceMin == null ||
                 _cfgBpmReferenceAtSourceMax == null ||
                 _cfgEnableVideoTimeSpeedCues == null ||
@@ -371,6 +392,46 @@ namespace MainGameSpeedLimitBreak
                 s.EnablePerFrameTrace = perFrameTraceEnabled;
                 changed = true;
                 LogInfo($"per-frame trace changed: {perFrameTraceEnabled}");
+            }
+
+            bool masturbationTraceEnabled = _cfgEnableMasturbationTransitionTrace.Value;
+            if (s.EnableMasturbationTransitionTrace != masturbationTraceEnabled)
+            {
+                s.EnableMasturbationTransitionTrace = masturbationTraceEnabled;
+                changed = true;
+                LogInfo($"masturbation transition trace changed: {masturbationTraceEnabled}");
+                if (!masturbationTraceEnabled)
+                {
+                    ResetMasturbationTransitionTraceState();
+                }
+            }
+
+            float masturbationTraceInterval = Mathf.Clamp(_cfgMasturbationTraceIntervalSec.Value, 0.1f, 10f);
+            if (!Mathf.Approximately(_cfgMasturbationTraceIntervalSec.Value, masturbationTraceInterval))
+            {
+                _suppressConfigSync = true;
+                _cfgMasturbationTraceIntervalSec.Value = masturbationTraceInterval;
+                _suppressConfigSync = false;
+            }
+
+            if (!Mathf.Approximately(s.MasturbationTraceIntervalSec, masturbationTraceInterval))
+            {
+                s.MasturbationTraceIntervalSec = masturbationTraceInterval;
+                changed = true;
+                LogInfo($"masturbation trace interval changed: {masturbationTraceInterval:0.###}");
+            }
+
+            bool showBpmUi = _cfgShowBpmUi.Value;
+            if (_showBpmUi != showBpmUi)
+            {
+                _showBpmUi = showBpmUi;
+                LogInfo($"bpm ui visibility changed: {showBpmUi}");
+            }
+
+            if (s.ShowBpmUi != showBpmUi)
+            {
+                s.ShowBpmUi = showBpmUi;
+                changed = true;
             }
 
             if (!skipCalibrationPull && currentModeMinRef > 0f && currentModeMaxRef <= currentModeMinRef)

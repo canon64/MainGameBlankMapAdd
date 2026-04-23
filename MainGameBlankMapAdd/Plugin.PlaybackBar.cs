@@ -2,6 +2,7 @@
 using System.Globalization;
 using System.IO;
 using UnityEngine;
+using UnityEngine.UI;
 using UnityEngine.Video;
 
 namespace MainGameBlankMapAdd
@@ -12,11 +13,92 @@ namespace MainGameBlankMapAdd
         private float _barDeferredPlayDeadline;
         private VideoPlayer _barDeferredPlayPlayer;
 
+        private GameObject _uiBlockerRoot;
+        private RectTransform _uiBlockerRect;
+        private const float BeatSyncSnapshotBarPollSec = 0.25f;
+        private const float ExternalUiSnapshotBarPollSec = 0.25f;
+        private bool _beatSyncSnapshotBarCacheReady;
+        private float _nextBeatSyncSnapshotBarPollTime;
+        private bool _beatSyncSnapshotBarAvailable;
+        private BeatSyncSnapshot _beatSyncSnapshotBarCached;
+        private bool _externalUiSnapshotBarCacheReady;
+        private float _nextExternalUiSnapshotBarPollTime;
+        private bool _hipUiSnapshotBarAvailable;
+        private bool _hipUiSnapshotBarVisible;
+        private bool _clubUiSnapshotBarAvailable;
+        private bool _clubUiSnapshotBarVisible;
+        private bool _afterimageSnapshotBarAvailable;
+        private bool _afterimageSnapshotBarEnabled;
+        private bool _dollModeSnapshotBarAvailable;
+        private bool _dollModeSnapshotBarEnabled;
+        private bool _poseSnapshotBarAvailable;
+        private bool _poseSnapshotBarEnabled;
+
         private float GetPlaybackBarMinHeightPx()
         {
             return _playbackRoomControlsExpanded
                 ? PlaybackBarMinHeightExpandedPx
                 : PlaybackBarMinHeightCollapsedPx;
+        }
+
+        private bool TryGetBeatSyncSnapshotForBar(out BeatSyncSnapshot snapshot)
+        {
+            float now = Time.unscaledTime;
+            if (!_beatSyncSnapshotBarCacheReady || now >= _nextBeatSyncSnapshotBarPollTime)
+            {
+                _beatSyncSnapshotBarCacheReady = true;
+                _nextBeatSyncSnapshotBarPollTime = now + BeatSyncSnapshotBarPollSec;
+                _beatSyncSnapshotBarAvailable = TryGetBeatSyncSnapshot(out _beatSyncSnapshotBarCached);
+            }
+
+            if (_beatSyncSnapshotBarAvailable && _beatSyncSnapshotBarCached != null)
+            {
+                snapshot = _beatSyncSnapshotBarCached;
+                return true;
+            }
+
+            snapshot = null;
+            return false;
+        }
+
+        private void InvalidateBeatSyncSnapshotBarCache()
+        {
+            _beatSyncSnapshotBarCacheReady = false;
+            _nextBeatSyncSnapshotBarPollTime = 0f;
+            _beatSyncSnapshotBarAvailable = false;
+            _beatSyncSnapshotBarCached = null;
+        }
+
+        private void RefreshExternalUiSnapshotBarCacheIfNeeded()
+        {
+            float now = Time.unscaledTime;
+            if (_externalUiSnapshotBarCacheReady && now < _nextExternalUiSnapshotBarPollTime)
+                return;
+
+            _externalUiSnapshotBarCacheReady = true;
+            _nextExternalUiSnapshotBarPollTime = now + ExternalUiSnapshotBarPollSec;
+
+            _hipUiSnapshotBarAvailable = TryGetHipHijackUiVisible(out _hipUiSnapshotBarVisible);
+            _clubUiSnapshotBarAvailable = TryGetClubLightsUiVisible(out _clubUiSnapshotBarVisible);
+            _afterimageSnapshotBarAvailable = TryGetAfterimageEnabled(out _afterimageSnapshotBarEnabled);
+            _dollModeSnapshotBarAvailable = TryGetDollModeEnabled(out _dollModeSnapshotBarEnabled);
+            _poseSnapshotBarAvailable = TryGetVfebPoseChangeEnabled(out _poseSnapshotBarEnabled);
+        }
+
+        private void InvalidateExternalUiSnapshotBarCache()
+        {
+            _externalUiSnapshotBarCacheReady = false;
+            _nextExternalUiSnapshotBarPollTime = 0f;
+            _hipUiSnapshotBarAvailable = false;
+            _hipUiSnapshotBarVisible = false;
+            _clubUiSnapshotBarAvailable = false;
+            _clubUiSnapshotBarVisible = false;
+            _afterimageSnapshotBarAvailable = false;
+            _afterimageSnapshotBarEnabled = false;
+            _dollModeSnapshotBarAvailable = false;
+            _dollModeSnapshotBarEnabled = false;
+            _poseSnapshotBarAvailable = false;
+            _poseSnapshotBarEnabled = false;
         }
 
         private void RequestDeferredPlayFromBar(VideoPlayer player, float timeoutSec = 8f)
@@ -301,6 +383,63 @@ namespace MainGameBlankMapAdd
                 LogInfo(logMessage);
         }
 
+        private static string GetSortModeDisplayLabel(string mode)
+        {
+            if (string.Equals(mode, "Date", StringComparison.OrdinalIgnoreCase)) return "Sort:Date";
+            if (string.Equals(mode, "Random", StringComparison.OrdinalIgnoreCase)) return "Sort:Random";
+            return "Sort:Name";
+        }
+
+        private static string GetNextSortMode(string current)
+        {
+            if (string.Equals(current, "Name", StringComparison.OrdinalIgnoreCase)) return "Date";
+            if (string.Equals(current, "Date", StringComparison.OrdinalIgnoreCase)) return "Random";
+            return "Name";
+        }
+
+        private void CycleFolderSortModeFromBar()
+        {
+            if (_settings == null) return;
+
+            string currentVideo = (FolderIndex >= 0 && FolderIndex < FolderFiles.Length)
+                ? FolderFiles[FolderIndex]
+                : null;
+
+            string next = GetNextSortMode(_settings.FolderPlaySortMode);
+            _settings.FolderPlaySortMode = next;
+
+            bool prevSync = _syncingConfig;
+            _syncingConfig = true;
+            try
+            {
+                if (_cfgFolderPlaySortMode != null)
+                    _cfgFolderPlaySortMode.Value = next;
+            }
+            finally
+            {
+                _syncingConfig = prevSync;
+                _configDirty = false;
+            }
+
+            SettingsStore.Save(Path.Combine(_pluginDir, "MapAddSettings.json"), _settings);
+            ForceFolderRescan();
+
+            // 再生中の動画のインデックスを維持
+            if (currentVideo != null && FolderFiles.Length > 0)
+            {
+                for (int i = 0; i < FolderFiles.Length; i++)
+                {
+                    if (string.Equals(FolderFiles[i], currentVideo, StringComparison.OrdinalIgnoreCase))
+                    {
+                        FolderIndex = i;
+                        break;
+                    }
+                }
+            }
+
+            LogInfo($"folder play: sort mode changed to {next} (bar)");
+        }
+
         private void SetCurrentFolderPlayPathFromBar(string folderPath)
         {
             if (_settings == null)
@@ -434,8 +573,8 @@ namespace MainGameBlankMapAdd
                 GUI.color = prevColor;
             }
 
-            if (_settings == null || !_settings.EnablePlaybackBar) return;
-            if (_videoRoomRoot == null) return;
+            if (_settings == null || !_settings.EnablePlaybackBar) { HideUiBlocker(); return; }
+            if (_videoRoomRoot == null) { HideUiBlocker(); return; }
 
             float triggerPx = Mathf.Max(0f, _settings.PlaybackBarShowMouseBottomPx);
             // 上段の部屋操作スライダー群 + ボタン群 + 下段再生スライダー群の3段構成を確保
@@ -473,11 +612,15 @@ namespace MainGameBlankMapAdd
                 !_playbackSeekDragging &&
                 !_playbackVolumeDragging &&
                 !_playbackGainDragging)
-                return;
+            { HideUiBlocker(); return; }
+
+            // 左Ctrl押下中はバーを透過して下の要素をクリックできるようにする
+            bool passThrough = Input.GetKey(KeyCode.LeftControl);
+            if (passThrough) { HideUiBlocker(); return; }
 
             bool shouldShow = mouseInTrigger || mouseOverBar || dropdownOpen ||
                 _playbackSeekDragging || _playbackVolumeDragging || _playbackGainDragging;
-            if (!shouldShow) return;
+            if (!shouldShow) { HideUiBlocker(); return; }
 
             string hoveredHelpText = null;
 
@@ -527,6 +670,7 @@ namespace MainGameBlankMapAdd
             float buttonH = 22f;
 
             float loopButtonW = _settings.FolderPlayEnabled ? Mathf.Max(buttonW, 92f) : 0f;
+            float sortButtonW = _settings.FolderPlayEnabled ? Mathf.Max(buttonW, 108f) : 0f;
             float addFolderButtonW = _settings.FolderPlayEnabled ? Mathf.Max(buttonW, 98f) : 0f;
             float folderDropdownW = _settings.FolderPlayEnabled ? Mathf.Max(buttonW, 142f) : 0f;
             float videoDropdownW = _settings.FolderPlayEnabled ? Mathf.Max(buttonW, 150f) : 0f;
@@ -534,7 +678,7 @@ namespace MainGameBlankMapAdd
             float buttonsTotalW = buttonW * 3f + tileButtonW + pad * 3f;
             if (_settings.FolderPlayEnabled)
             {
-                buttonsTotalW += buttonW * 2f + loopButtonW + addFolderButtonW + folderDropdownW + videoDropdownW + pad * 6f;
+                buttonsTotalW += buttonW * 2f + loopButtonW + sortButtonW + addFolderButtonW + folderDropdownW + videoDropdownW + pad * 7f;
             }
 
             float sideGap = 10f;
@@ -823,7 +967,7 @@ namespace MainGameBlankMapAdd
 
                 float row1Y = integrationTopY + 16f;
 
-                if (TryGetBeatSyncSnapshot(out BeatSyncSnapshot beatSnapshot))
+                if (TryGetBeatSyncSnapshotForBar(out BeatSyncSnapshot beatSnapshot))
                 {
                     var nextBeat = new BeatSyncSnapshot
                     {
@@ -1116,8 +1260,8 @@ namespace MainGameBlankMapAdd
                         "弱モーション切替の拍数");
                     if (Mathf.Abs(weakSlider - nextBeat.WeakMotionBeats) > 0.0001f) { nextBeat.WeakMotionBeats = weakSlider; _beatSyncWeakBeatsInput = FormatRoomNumeric(weakSlider); beatChanged = true; }
 
-                    if (beatChanged)
-                        TryApplyBeatSyncSnapshot(nextBeat, "bar-ui");
+                    if (beatChanged && TryApplyBeatSyncSnapshot(nextBeat, "bar-ui"))
+                        InvalidateBeatSyncSnapshotBarCache();
 
                     if (HelpButton(new Rect(beatSaveFolderX, row1Y, beatSaveW, 18f), "SaveF", "BeatSync設定をフォルダ設定に保存"))
                         SaveFolderBeatSyncProfileFromBar();
@@ -1136,14 +1280,20 @@ namespace MainGameBlankMapAdd
             float panelToggleW = 22f;
             float helpToggleW = 62f;
             float hipUiToggleW = 84f;
+            float clubUiToggleW = 84f;
             float afterimageToggleW = 94f;
+            float dollModeToggleW = 84f;
+            float poseToggleW = 94f;
             float toggleGap = 4f;
             float panelToggleX = x - panelToggleW - pad;
-            float toggleGroupW = helpToggleW + hipUiToggleW + afterimageToggleW + toggleGap * 2f;
+            float toggleGroupW = helpToggleW + hipUiToggleW + clubUiToggleW + afterimageToggleW + dollModeToggleW + poseToggleW + toggleGap * 5f;
             float toggleGroupX = barRect.x + (barRect.width - toggleGroupW) * 0.5f;
             float helpToggleX = toggleGroupX;
             float hipUiToggleX = helpToggleX + helpToggleW + toggleGap;
-            float afterimageToggleX = hipUiToggleX + hipUiToggleW + toggleGap;
+            float clubUiToggleX = hipUiToggleX + hipUiToggleW + toggleGap;
+            float afterimageToggleX = clubUiToggleX + clubUiToggleW + toggleGap;
+            float dollModeToggleX = afterimageToggleX + afterimageToggleW + toggleGap;
+            float poseToggleX = dollModeToggleX + dollModeToggleW + toggleGap;
             float helpToggleH = 18f;
             float helpToggleY = y + buttonH + 1f;
             bool currentHelpPopup = _settings.EnableUiHelpPopup;
@@ -1155,7 +1305,10 @@ namespace MainGameBlankMapAdd
             if (nextHelpPopup != currentHelpPopup)
                 ApplyPlaybackBarHelpPopupToggle(nextHelpPopup, persist: true);
 
-            bool hipUiAvailable = TryGetHipHijackUiVisible(out bool hipUiVisibleNow);
+            RefreshExternalUiSnapshotBarCacheIfNeeded();
+
+            bool hipUiAvailable = _hipUiSnapshotBarAvailable;
+            bool hipUiVisibleNow = _hipUiSnapshotBarVisible;
             bool prevGuiEnabled = GUI.enabled;
             GUI.enabled = prevGuiEnabled && hipUiAvailable;
             bool nextHipUiVisible = HelpToggle(
@@ -1167,9 +1320,42 @@ namespace MainGameBlankMapAdd
                     : "MainGirlHipHijack が未ロード");
             GUI.enabled = prevGuiEnabled;
             if (hipUiAvailable && nextHipUiVisible != hipUiVisibleNow)
-                TryApplyHipHijackUiVisible(nextHipUiVisible, "bar-ui-toggle");
+            {
+                if (TryApplyHipHijackUiVisible(nextHipUiVisible, "bar-ui-toggle"))
+                {
+                    _hipUiSnapshotBarVisible = nextHipUiVisible;
+                }
+                else
+                {
+                    InvalidateExternalUiSnapshotBarCache();
+                }
+            }
 
-            bool afterimageAvailable = TryGetAfterimageEnabled(out bool afterimageEnabledNow);
+            bool clubUiAvailable = _clubUiSnapshotBarAvailable;
+            bool clubUiVisibleNow = _clubUiSnapshotBarVisible;
+            GUI.enabled = prevGuiEnabled && clubUiAvailable;
+            bool nextClubUiVisible = HelpToggle(
+                new Rect(clubUiToggleX, helpToggleY, clubUiToggleW, helpToggleH),
+                clubUiVisibleNow,
+                "ClubUI",
+                clubUiAvailable
+                    ? "MainGameClubLights UI の表示/非表示"
+                    : "MainGameClubLights が未ロード");
+            GUI.enabled = prevGuiEnabled;
+            if (clubUiAvailable && nextClubUiVisible != clubUiVisibleNow)
+            {
+                if (TryApplyClubLightsUiVisible(nextClubUiVisible, "bar-ui-toggle"))
+                {
+                    _clubUiSnapshotBarVisible = nextClubUiVisible;
+                }
+                else
+                {
+                    InvalidateExternalUiSnapshotBarCache();
+                }
+            }
+
+            bool afterimageAvailable = _afterimageSnapshotBarAvailable;
+            bool afterimageEnabledNow = _afterimageSnapshotBarEnabled;
             GUI.enabled = prevGuiEnabled && afterimageAvailable;
             bool nextAfterimageEnabled = HelpToggle(
                 new Rect(afterimageToggleX, helpToggleY, afterimageToggleW, helpToggleH),
@@ -1180,7 +1366,62 @@ namespace MainGameBlankMapAdd
                     : "SimpleAfterimage が未ロード");
             GUI.enabled = prevGuiEnabled;
             if (afterimageAvailable && nextAfterimageEnabled != afterimageEnabledNow)
-                TryApplyAfterimageEnabled(nextAfterimageEnabled, "bar-ui-toggle");
+            {
+                if (TryApplyAfterimageEnabled(nextAfterimageEnabled, "bar-ui-toggle"))
+                {
+                    _afterimageSnapshotBarEnabled = nextAfterimageEnabled;
+                }
+                else
+                {
+                    InvalidateExternalUiSnapshotBarCache();
+                }
+            }
+
+            bool dollModeAvailable = _dollModeSnapshotBarAvailable;
+            bool dollModeEnabledNow = _dollModeSnapshotBarEnabled;
+            GUI.enabled = prevGuiEnabled && dollModeAvailable;
+            bool nextDollModeEnabled = HelpToggle(
+                new Rect(dollModeToggleX, helpToggleY, dollModeToggleW, helpToggleH),
+                dollModeEnabledNow,
+                "人形",
+                dollModeAvailable
+                    ? "MainGameDollMode の有効/無効"
+                    : "MainGameDollMode が未ロード");
+            GUI.enabled = prevGuiEnabled;
+            if (dollModeAvailable && nextDollModeEnabled != dollModeEnabledNow)
+            {
+                if (TryApplyDollModeEnabled(nextDollModeEnabled, "bar-ui-toggle"))
+                {
+                    _dollModeSnapshotBarEnabled = nextDollModeEnabled;
+                }
+                else
+                {
+                    InvalidateExternalUiSnapshotBarCache();
+                }
+            }
+
+            bool poseAvailable = _poseSnapshotBarAvailable;
+            bool poseEnabledNow = _poseSnapshotBarEnabled;
+            GUI.enabled = prevGuiEnabled && poseAvailable;
+            bool nextPoseEnabled = HelpToggle(
+                new Rect(poseToggleX, helpToggleY, poseToggleW, helpToggleH),
+                poseEnabledNow,
+                "体位変更",
+                poseAvailable
+                    ? "VoiceFaceEventBridge 体位変更の有効/無効"
+                    : "VoiceFaceEventBridge が未ロード");
+            GUI.enabled = prevGuiEnabled;
+            if (poseAvailable && nextPoseEnabled != poseEnabledNow)
+            {
+                if (TryApplyVfebPoseChangeEnabled(nextPoseEnabled, "bar-ui-toggle"))
+                {
+                    _poseSnapshotBarEnabled = nextPoseEnabled;
+                }
+                else
+                {
+                    InvalidateExternalUiSnapshotBarCache();
+                }
+            }
 
             string panelToggleLabel = _playbackRoomControlsExpanded ? "▼" : "▲";
             if (HelpButtonContent(
@@ -1264,6 +1505,13 @@ namespace MainGameBlankMapAdd
                     LogInfo($"folder play: single loop {(nextSingle ? "on" : "off")} (bar)");
                 }
                 x += loopButtonW + pad;
+
+                string sortLabel = GetSortModeDisplayLabel(_settings.FolderPlaySortMode);
+                if (HelpButton(new Rect(x, y, sortButtonW, buttonH), sortLabel, "並び順を切替 (Name→Date→Random)"))
+                {
+                    CycleFolderSortModeFromBar();
+                }
+                x += sortButtonW + pad;
 
                 string tileButtonLabel = $"Tiles:{_settings.CubeFaceTileCount}";
                 if (HelpButton(new Rect(x, y, tileButtonW, buttonH), tileButtonLabel, "1面あたりの動画パネル枚数を切替"))
@@ -1629,6 +1877,89 @@ namespace MainGameBlankMapAdd
             }
 
             DrawPlaybackBarHelpPopup(mouseGui, hoveredHelpText);
+
+            // IMGUI側のイベント消費
+            if (Event.current != null)
+            {
+                bool isMouseEvent = Event.current.type == EventType.MouseDown
+                    || Event.current.type == EventType.MouseUp
+                    || Event.current.type == EventType.MouseDrag;
+                if (isMouseEvent)
+                {
+                    bool consumed = barRect.Contains(mouseGui);
+                    if (!consumed && folderDropdownListRect.width > 0f && folderDropdownListRect.Contains(mouseGui))
+                        consumed = true;
+                    if (!consumed && videoDropdownListRect.width > 0f && videoDropdownListRect.Contains(mouseGui))
+                        consumed = true;
+                    if (!consumed && _reverbDropdownListRect.width > 0f && _reverbDropdownListRect.Contains(mouseGui))
+                        consumed = true;
+                    if (consumed)
+                    {
+                        Event.current.Use();
+                    }
+                }
+            }
+
+            // uGUI EventSystem側のクリック貫通防止（透明ブロッカー）
+            Rect blockRect = barRect;
+            ExpandBlockRect(ref blockRect, folderDropdownListRect);
+            ExpandBlockRect(ref blockRect, videoDropdownListRect);
+            ExpandBlockRect(ref blockRect, _reverbDropdownListRect);
+            UpdateUiBlocker(blockRect);
+        }
+
+        private static void ExpandBlockRect(ref Rect block, Rect addition)
+        {
+            if (addition.width <= 0f || addition.height <= 0f)
+                return;
+            float minX = Mathf.Min(block.xMin, addition.xMin);
+            float minY = Mathf.Min(block.yMin, addition.yMin);
+            float maxX = Mathf.Max(block.xMax, addition.xMax);
+            float maxY = Mathf.Max(block.yMax, addition.yMax);
+            block = new Rect(minX, minY, maxX - minX, maxY - minY);
+        }
+
+        private void UpdateUiBlocker(Rect guiRect)
+        {
+            if (_uiBlockerRoot == null)
+            {
+                _uiBlockerRoot = new GameObject("PlaybackBarBlocker");
+                UnityEngine.Object.DontDestroyOnLoad(_uiBlockerRoot);
+
+                var canvas = _uiBlockerRoot.AddComponent<Canvas>();
+                canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+                canvas.sortingOrder = 29999;
+
+                _uiBlockerRoot.AddComponent<GraphicRaycaster>();
+
+                var imageObj = new GameObject("BlockerImage");
+                imageObj.transform.SetParent(_uiBlockerRoot.transform, false);
+                var image = imageObj.AddComponent<Image>();
+                image.color = new Color(0f, 0f, 0f, 0f);
+                image.raycastTarget = true;
+                _uiBlockerRect = imageObj.GetComponent<RectTransform>();
+            }
+
+            // IMGUI座標(左上原点)→uGUI ScreenSpaceOverlay座標(左下原点)に変換
+            float screenH = Screen.height;
+            float uiX = guiRect.x;
+            float uiY = screenH - guiRect.yMax; // 左下原点のY
+            float uiW = guiRect.width;
+            float uiH = guiRect.height;
+
+            _uiBlockerRect.anchorMin = new Vector2(uiX / Screen.width, uiY / screenH);
+            _uiBlockerRect.anchorMax = new Vector2((uiX + uiW) / Screen.width, (uiY + uiH) / screenH);
+            _uiBlockerRect.offsetMin = Vector2.zero;
+            _uiBlockerRect.offsetMax = Vector2.zero;
+
+            if (!_uiBlockerRoot.activeSelf)
+                _uiBlockerRoot.SetActive(true);
+        }
+
+        private void HideUiBlocker()
+        {
+            if (_uiBlockerRoot != null && _uiBlockerRoot.activeSelf)
+                _uiBlockerRoot.SetActive(false);
         }
 
         private static readonly string[] ReverbPresets =

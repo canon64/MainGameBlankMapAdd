@@ -39,8 +39,8 @@ namespace MainGameSpeedLimitBreak
 
             // タイムライン時は本体 WaitSpeedProc を止める。
             // ゲージ位置(speedCalc)を確定し、speed はその位置に対するカーブ値で決める。
-            float fromMin = s.SourceMinSpeed;
-            float fromMax = Mathf.Max(fromMin + 0.0001f, s.SourceMaxSpeed);
+            GetEffectiveSourceRange(out float fromMin, out float fromMax);
+            fromMax = Mathf.Max(fromMin + 0.0001f, fromMax);
             float sourceForGauge = Mathf.Clamp(s.TargetMaxSpeed, fromMin, fromMax);
             float calc = _timelineGaugeOverrideEnabled && _timelineGaugeOverride01 >= 0f
                 ? Mathf.Clamp01(_timelineGaugeOverride01)

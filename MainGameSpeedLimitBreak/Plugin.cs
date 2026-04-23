@@ -33,6 +33,7 @@ namespace MainGameSpeedLimitBreak
         private HSceneProc _hSceneProc;
         private float _nextHSceneScanTime;
         private bool _insideHScene;
+        private bool _masturbationSourceRangeActive;
         private float _nextVerboseLogTime;
         private float _nextHijackLogTime;
         private float _nextVideoRoomPollTime;
@@ -54,6 +55,9 @@ namespace MainGameSpeedLimitBreak
         private ConfigEntry<bool> _cfgEnableBpmSpeedRemap;
         private ConfigEntry<bool> _cfgForceVanillaSpeed;
         private ConfigEntry<bool> _cfgEnablePerFrameTrace;
+        private ConfigEntry<bool> _cfgEnableMasturbationTransitionTrace;
+        private ConfigEntry<float> _cfgMasturbationTraceIntervalSec;
+        private ConfigEntry<bool> _cfgShowBpmUi;
         private ConfigEntry<bool> _cfgEnableVideoTimeSpeedCues;
         private ConfigEntry<string> _cfgVideoTimeCueFilePath;
         private bool _suppressConfigSync;
@@ -84,6 +88,29 @@ namespace MainGameSpeedLimitBreak
         private bool _videoCueResetOnLoop = true;
         private List<VideoTimeSpeedCue> _videoCueTimeline = new List<VideoTimeSpeedCue>();
         private readonly Dictionary<string, float> _diagNextLogTime = new Dictionary<string, float>(StringComparer.Ordinal);
+
+        private const float MasturbationEffectiveSourceMin = 0.35f;
+        private const float MasturbationEffectiveSourceMax = 2.2f;
+
+        private void GetEffectiveSourceRange(out float min, out float max)
+        {
+            var s = Settings;
+            if (_masturbationSourceRangeActive)
+            {
+                min = MasturbationEffectiveSourceMin;
+                max = MasturbationEffectiveSourceMax;
+            }
+            else if (s != null)
+            {
+                min = s.SourceMinSpeed;
+                max = s.SourceMaxSpeed;
+            }
+            else
+            {
+                min = 1f;
+                max = 3f;
+            }
+        }
 
         private static readonly FieldInfo LstFemaleField = AccessTools.Field(typeof(HSceneProc), "lstFemale");
 
@@ -214,14 +241,46 @@ namespace MainGameSpeedLimitBreak
             {
                 _insideHScene = false;
             }
+
+            UpdateMasturbationStateTrace();
         }
 
         private void ToggleBpmUi(string reason)
         {
-            _showBpmUi = !_showBpmUi;
+            SetBpmUiVisibility(!_showBpmUi, reason, saveSettings: true);
+        }
+
+        private void SetBpmUiVisibility(bool visible, string reason, bool saveSettings)
+        {
+            _showBpmUi = visible;
+            PushBpmUiVisibilityToConfigEntry(visible);
+            var s = Settings;
+            if (s != null)
+            {
+                bool changed = s.ShowBpmUi != visible;
+                s.ShowBpmUi = visible;
+                if (changed && saveSettings)
+                {
+                    SaveSettings(reason);
+                }
+            }
+
             string state = _showBpmUi ? "ON" : "OFF";
             LogInfo($"BPM UI {state} ({reason})");
             ShowUiNotice("BPM UI " + state);
+        }
+
+        private void PushBpmUiVisibilityToConfigEntry(bool visible)
+        {
+            if (_cfgShowBpmUi == null)
+                return;
+
+            if (_cfgShowBpmUi.Value == visible)
+                return;
+
+            _suppressConfigSync = true;
+            _cfgShowBpmUi.Value = visible;
+            _suppressConfigSync = false;
         }
 
         // ─── ログ ───────────────────────────────────────────────────────────────

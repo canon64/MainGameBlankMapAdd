@@ -12,6 +12,7 @@ namespace MainGameSpeedLimitBreak
             if (plugin == null)
                 return true;
 
+            plugin.TraceSetAnimatorFloat(_param, _value);
             plugin.TryRemap(_param, ref _value);
             return true;
         }
@@ -71,6 +72,19 @@ namespace MainGameSpeedLimitBreak
         }
     }
 
+    // ディルドオナニー調査用: LateProc後のanimator.speedを記録
+    [HarmonyPatch(typeof(HActionBase), "LateProc")]
+    internal static class HActionBaseLateProcDiagPatch
+    {
+        [HarmonyPriority(Priority.Last)]
+        private static void Postfix()
+        {
+            var plugin = Plugin.Instance;
+            if (plugin == null) return;
+            plugin.TraceLateProcAnimatorSpeed();
+        }
+    }
+
     [HarmonyPatch(typeof(HSceneProc), "Update")]
     internal static class HSceneProcUpdateTimelineForcePatch
     {
@@ -82,6 +96,8 @@ namespace MainGameSpeedLimitBreak
                 return;
 
             plugin.TracePatchCall("HSceneProc.Update.Postfix", __instance.flags);
+            plugin.RemapMasturbationAnimatorSpeed();
+            plugin.TraceMasturbationAnimators();
             plugin.ForceTimelineGaugeOnFlags(__instance.flags, "hscene-update");
         }
     }

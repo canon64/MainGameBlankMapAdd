@@ -463,6 +463,15 @@ namespace MainGameSpeedLimitBreak
             {
                 EnableBpmSpeedRemap = true;
             }
+
+            if (MasturbationTraceIntervalSec < 0.1f)
+            {
+                MasturbationTraceIntervalSec = 0.5f;
+            }
+            else if (MasturbationTraceIntervalSec > 10f)
+            {
+                MasturbationTraceIntervalSec = 10f;
+            }
         }
 
         [DataMember(Order = 0)]
@@ -582,6 +591,15 @@ namespace MainGameSpeedLimitBreak
 
         [DataMember(Order = 36)]
         public float BpmReferenceAtSpeed3Houshi = 113f;
+
+        [DataMember(Order = 37)]
+        public bool ShowBpmUi = false;
+
+        [DataMember(Order = 38)]
+        public bool EnableMasturbationTransitionTrace = true;
+
+        [DataMember(Order = 39)]
+        public float MasturbationTraceIntervalSec = 0.5f;
     }
 
     [DataContract]
